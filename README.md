@@ -2,10 +2,12 @@
 
 Sensor Fusion for Autonomous Systems
 Overview:
+
       This repository contains my work from a course in sensor fusion and state estimation, focused on practical applications in robotics and autonomous systems.
       The course covers how to estimate the state of dynamic systems using noisy sensor data. These methods are widely used in robotics, autonomous vehicles, and navigation systems.
 
 What I Worked With:
+
       Implemented Kalman Filter (KF) for linear systems
       Implemented Extended Kalman Filter (EKF) and Unscented Kalman Filter (UKF) for nonlinear systems
       Implemented Particle Filters (PF) for probabilistic state estimation
@@ -17,6 +19,7 @@ What I Worked With:
 
 
 Key Skills: 
+
           Bayesian estimation and probabilistic reasoning
           Sensor modeling and multi-sensor fusion
           Handling nonlinear systems
@@ -26,6 +29,7 @@ Key Skills:
 
 Relevance:
 This work is directly relevant to:
+
             Robotics and autonomous mobile robots
             Sensor fusion systems
             Perception and localization
@@ -37,6 +41,7 @@ This work is directly relevant to:
     
 
 Repository Contents:
+
     Assignments
     Filter implementations
     Experiments and results
