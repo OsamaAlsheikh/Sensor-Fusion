@@ -1,0 +1,352 @@
+function [xhat, meas] = filterTemplateCopy(calAcc, calGyr, calMag)
+% FILTERTEMPLATE  Filter template
+%
+% This is a template function for how to collect and filter data
+% sent from a smartphone live.  Calibration data for the
+% accelerometer, gyroscope and magnetometer assumed available as
+% structs with fields m (mean) and R (variance).
+%
+% The function returns xhat as an array of structs comprising t
+% (timestamp), x (state), and P  (state covariance) for each
+% timestamp, and meas an array of structs comprising t (timestamp),
+% acc (accelerometer measurements), gyr (gyroscope measurements),
+% mag (magnetometer measurements), and orint (orientation quaternions
+% from the phone).  Measurements not availabe are marked with NaNs.
+%
+% As you implement your own orientation estimate, it will be
+% visualized in a simple illustration.  If the orientation estimate
+% is checked in the Sensor Fusion app, it will be displayed in a
+% separate view.
+%
+% Note that it is not necessary to provide inputs (calAcc, calGyr, calMag).
+
+  %% Setup necessary infrastructure
+  import('com.liu.sensordata.*');  % Used to receive data.
+
+  %% Filter settings
+  t0 = [];  % Initial time (initialize on first data received)
+  nx = 4;   % Assuming that you use q as state variable.
+  % Add your filter settings here.
+
+  
+  % Current filter state.
+  x = [1; 0; 0 ;0];
+  P = eye(nx, nx);
+
+  Rw = diag([8.1544e-07 9.0072e-07 3.1042e-07]);  %process noise extracted from question 2 covariances of the sensors
+  Ra = diag([9.1093e-05  7.4411e-05  5.7983e-04]); %measurement noise (acclerometer) extracted from question 2 covariances of the sensors
+  g0 = [1.7640e-01 ;   2.0641e-02 ;  9.8593e+00]; % mean values when mobile is still
+
+  Rm = 0.01* diag([ 2.2340e-01  1.6720e-01 2.0757e-01]); 
+
+%calibration variables
+  i = 0;
+  calibration_mag = [];
+  m0 = 0;
+  magCali_run = false;
+
+
+  %initial magnetic field strength L
+  L= norm(m0);
+  alpha= 0.02;
+
+  % Saved filter states.
+  xhat = struct('t', zeros(1, 0),...
+                'x', zeros(nx, 0),...
+                'P', zeros(nx, nx, 0));
+
+  meas = struct('t', zeros(1, 0),...
+                'acc', zeros(3, 0),...
+                'gyr', zeros(3, 0),...
+                'mag', zeros(3, 0),...
+                'orient', zeros(4, 0));
+  try
+    %% Create data link
+    server = StreamSensorDataReader(3400);
+    % Makes sure to resources are returned.
+    sentinel = onCleanup(@() server.stop());
+
+    server.start();  % Start data reception.
+
+    % Used for visualization.
+    figure(1);
+    subplot(1, 2, 1);
+    ownView = OrientationView('Own filter', gca);  % Used for visualization.
+    googleView = [];
+    counter = 0;  % Used to throttle the displayed frame rate.
+
+    %% Filter loop
+    while server.status()  % Repeat while data is available
+      % Get the next measurement set, assume all measurements
+      % within the next 5 ms are concurrent (suitable for sampling
+      % in 100Hz).
+      data = server.getNext(5);
+
+        %calibration of the magnometer
+        if i<115 && ~any(isnan(data(1, 8:10)))
+                  calibration_mag = [calibration_mag data(1, 8:10)'];
+                  if i > 1
+                      mag_mean = mean(calibration_mag);
+                      m0=[0; 
+                          sqrt(mag_mean(1)^2+mag_mean(2)^2); 
+                          mag_mean(3)];
+                      magCali_run = true; %calibration of the mag started
+                  end
+                 i = i+1;
+        end
+
+      if isnan(data(1))  % No new data received
+        continue;        % Skips the rest of the look
+      end
+      t = data(1)/1000;  % Extract current time
+
+      if isempty(t0)  % Initialize t0
+        t0 = t;
+      end
+
+      acc = data(1, 2:4)';
+      if ~any(isnan(acc))  % Acc measurements are available.
+        %Do something
+       if  norm(acc)>9.81*0.9 && norm(acc)<9.81*1.1 
+            [x, P] = mu_g(x, P, acc, Ra, g0); 
+            [x, P] = mu_normalizeQ(x, P);
+             ownView.setAccDist(0)
+       else
+             ownView.setAccDist(1)
+
+       end
+      end
+
+      gyr = data(1, 5:7)';
+      if ~any(isnan(gyr))  %Gyro measurements are available.
+       [x, P] = tu_qw(x, P, gyr, t-t0-meas.t(end), Rw); 
+       [x, P] = mu_normalizeQ(x, P);
+      else 
+      P=P+0.01*eye(4); %if there is no gyro, just do random walk
+      end
+
+      mag = data(1, 8:10)';
+      mag_discard = false;
+      if ~any(isnan(mag))  % Mag measurements are available.
+        %Do something
+        L=(1-alpha)*L+alpha*norm(mag);
+        if (L>35 && L<75)
+            ownView.setMagDist(0)
+        else
+            mag_discard = true;
+            ownView.setMagDist(1)
+        end
+      end
+     
+     if  magCali_run  && ~mag_discard % run if mag is calibrated and has valid values
+            [x, P] = mu_m(x, P, mag, m0, Rm); 
+            [x, P] = mu_normalizeQ(x, P);
+     end
+
+     orientation = data(1, 18:21)';  % Google's orientation estimate.
+
+      % Visualize result
+      if rem(counter, 10) == 0
+        setOrientation(ownView, x(1:4));
+        title(ownView, 'OWN', 'FontSize', 16);
+        if ~any(isnan(orientation))
+          if isempty(googleView)
+            subplot(1, 2, 2);
+            % Used for visualization.
+            googleView = OrientationView('Google filter', gca);
+          end
+          setOrientation(googleView, orientation);
+          title(googleView, 'GOOGLE', 'FontSize', 16);
+        end
+      end
+      counter = counter + 1;
+
+      % Save estimates
+      xhat.x(:, end+1) = x;
+      xhat.P(:, :, end+1) = P;
+      xhat.t(end+1) = t - t0;
+
+      meas.t(end+1) = t - t0;
+      meas.acc(:, end+1) = acc;
+      meas.gyr(:, end+1) = gyr;
+      meas.mag(:, end+1) = mag;
+      meas.orient(:, end+1) = orientation;
+    end
+  catch e
+    fprintf(['Unsuccessful connecting to client!\n' ...
+      'Make sure to start streaming from the phone after'...
+             'running this function!']);
+  end
+end
+
+
+clear all
+close all
+
+[xhat, meas] = filterTemplateCopy();
+%[xhat, meas] = filterTemplate();
+
+acc = meas.acc(:, ~any(isnan(meas.acc), 1)); 
+gyr = meas.gyr(:, ~any(isnan(meas.gyr), 1));
+mag = meas.mag(:, ~any(isnan(meas.mag), 1));
+google = meas.orient(:, ~any(isnan(meas.orient), 1));
+
+
+meanAcc = mean(acc, 2);
+meanGyr = mean(gyr, 2);
+meanMag = mean(mag, 2);
+
+covAcc =  cov(acc');
+covGyr = cov(gyr');
+covMag = cov(mag');
+
+
+%%%%%%%%%Acceleration
+AccXnorm = normpdf(0.14:0.001:0.21, meanAcc(1), sqrt(covAcc(1,1))); 
+AccYnorm = normpdf(-0.02:0.001:0.06, meanAcc(2), sqrt(covAcc(2,2))); 
+AccZnorm = normpdf(9.75:0.001:9.95, meanAcc(3), sqrt(covAcc(3,3))); 
+
+
+figure;
+subplot(3,1,1)
+histogram(acc(1,:), 'Normalization','pdf', 'FaceColor', 'r');
+hold on
+plot(0.14:0.001:0.21,AccXnorm,'--','linewidth',1)
+legend('x')
+title('Accelerometer X Histogram') 
+subplot(3,1,2)
+histogram(acc(2,:), 'Normalization','pdf','FaceColor', 'g'); 
+legend('y')
+hold on
+plot(-0.02:0.001:0.06,AccYnorm,'--','linewidth',1)
+legend('y')
+title('Accelerometer Y Histogram') 
+subplot(3,1,3)
+histogram(acc(3,:),'Normalization','pdf','FaceColor', 'b'); 
+legend('z')
+hold on
+plot(9.75:0.001:9.95,AccZnorm,'--','linewidth',1)
+legend('z')
+title('Accelerometer Z Histogram') 
+
+figure;
+subplot(3,1,1)
+plot(acc(1,:),  'Color', 'r')
+legend('x')
+xlabel('t')
+title('Accelerometer X Data')
+subplot(3,1,2)
+plot(acc(2,:), 'Color', 'g')
+legend('y')
+xlabel('t')
+title('Accelerometer Y Data')
+subplot(3,1,3)
+plot(acc(3,:), 'Color', 'b')
+legend('z')
+xlabel('t')
+title('Accelerometer Z Data')
+
+
+%%%%%%%%%%Gyroscope
+GyrXnorm = normpdf(-0.0055:0.001:0.0055, meanGyr(1),sqrt(covGyr(1,1))); 
+GyrYnorm = normpdf(-0.0055:0.001:0.0055, meanGyr(2),sqrt(covGyr(2,2))); 
+GyrZnorm = normpdf(-0.0055:0.001:0.0055, meanGyr(3),sqrt(covGyr(3,3))); 
+
+figure;
+subplot(3,1,1)
+histogram(gyr(1,:),'Normalization','pdf', 'FaceColor', 'r');
+hold on
+plot(-0.0055:0.001:0.0055,GyrXnorm,'--','linewidth',1)
+legend('x')
+title('Gyroscope X Histogram') 
+subplot(3,1,2)
+histogram(gyr(2,:), 'Normalization','pdf','FaceColor', 'g');
+hold on
+plot(-0.0055:0.001:0.0055,GyrYnorm,'--','linewidth',1)
+legend('y')
+title('Gyroscope Y Histogram') 
+subplot(3,1,3)
+histogram(gyr(3,:), 'Normalization','pdf','FaceColor', 'b'); 
+legend('z')
+hold on
+plot(-0.0055:0.001:0.0055,GyrZnorm,'--','linewidth',1)
+title('Gyroscope Z Histogram') 
+
+figure;
+subplot(3,1,1)
+plot(gyr(1,:),'Color', 'r')
+legend('x')
+xlabel('t')
+title('Gyroscope X data')
+subplot(3,1,2)
+plot(gyr(2,:),'Color', 'g')
+legend('y')
+xlabel('t')
+title('Gyroscope Y data')
+subplot(3,1,3)
+plot(gyr(3,:),'Color', 'b')
+legend('z')
+xlabel('t')
+title('Gyroscope Z data')
+ 
+
+%Magnetometer
+MagXnorm = normpdf(6:0.001:8.5, meanMag(1), sqrt(covMag(1,1))); 
+MagYnorm = normpdf(5:0.001:8, meanMag(2), sqrt(covMag(2,2))); 
+MagZnorm = normpdf(-54.5:0.001:-51.5, meanMag(3), sqrt(covMag(3,3))); 
+
+figure
+subplot(3,1,1)
+histogram(mag(1,:),'Normalization','pdf', 'FaceColor', 'r'); 
+hold on
+plot(6:0.001:8.5, MagXnorm,'--','linewidth',1)
+legend('x')
+title('Magnetometer X Histogram') 
+subplot(3,1,2)
+histogram(mag(2,:),'Normalization','pdf','FaceColor', 'g');
+hold on
+plot(5:0.001:8, MagYnorm,'--','linewidth',1)
+legend('y')
+title('Magnetometer Y Histogram') 
+subplot(3,1,3)
+histogram(mag(3,:),'Normalization','pdf','FaceColor', 'b');
+hold on
+plot(-54.5:0.001:-51.5, MagZnorm,'--','linewidth',1)
+legend('z')
+title('Magnetometer Z Histogram') 
+
+
+figure;
+subplot(3,1,1)
+plot(mag(1,:),'Color', 'r')
+legend('x')
+xlabel('t')
+title('Magnetometer X data')
+subplot(3,1,2)
+plot(mag(2,:),'Color', 'g')
+legend('y')
+xlabel('t')
+title('Magnetometer Y data')
+subplot(3,1,3)
+plot(mag(3,:),'Color', 'b')
+legend('z')
+xlabel('t')
+title('Magnetometer Z data')
+
+
+
+%%
+[xhat1, meas1] = filterTemplateCopy();
+
+euler_estimation = q2euler(xhat1.x);
+euler_google = q2euler(meas1.orient);
+figure;
+hold on;
+for i=1:3
+    subplot(3,1,i);hold on
+    plot(euler_estimation(i,:),'color','r','LineWidth',1);
+    plot(euler_google(i,:),'color','g','LineWidth',1);
+    legend('estimate','Google')
+end
+
+

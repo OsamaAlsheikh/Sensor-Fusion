@@ -1,0 +1,305 @@
+% Close all existing figures, clear workspace, and command window
+close all
+clear all
+clc
+
+% Add path to custom functions
+addpath('C:\Users\Osama\Desktop\Master\sensorfusion\functions');
+
+%% Scenario 1 – A first Kalman filter and its properties
+
+%%-a- Generate state and measurements sequence
+
+% Define state space matrices
+A_cv = 1;
+H = 1;
+
+% Starting prior mean and covariance
+x_0 = 2;
+P_0 = 8;
+
+% Measurement noise covariance (R), process noise covariance (Q), and length of sequence (N)
+R = 3;
+Q = 1.5;
+N = 35;
+
+% Generate states
+x_states = genLinearStateSequence(x_0, P_0, A_cv, Q, N);
+
+% Generate measurements
+y_measurements = genLinearMeasurementSequence(x_states, H, R);
+
+% Plot the results
+figure()
+hold on
+grid on
+plot(0:N, x_states,'Linewidth', 1.5)
+plot(1:N, y_measurements,'linewidth', 1.5)
+title('Linear Gaussian model')
+xlabel('TimeSteps');
+legend('Generated States x','Measurements y of x')
+
+%% b. Kalman Filter Estimation
+
+% Get the Kalman estimation
+[x_Kalman, P_Kalman, V, P_pred]  = kalmanFilter(y_measurements, x_0, P_0, A_cv, Q, H, R);
+sigma = sqrt(reshape(P_Kalman,1,35)); % Standard Deviation
+plus_3sigma_kalman  = x_Kalman + 3*sigma;
+negative_3sigma_kalman = x_Kalman - 3*sigma; 
+
+% Plot Kalman estimation
+figure;
+grid on
+hold on
+plot(x_states,'Linewidth', 2)
+plot(y_measurements,'Linewidth', 2)
+plot(x_Kalman,'Linewidth', 2)
+plot(negative_3sigma_kalman,'color','green','Linewidth', 2)
+plot(plus_3sigma_kalman,'color','green', 'Linewidth', 2)
+legend(' X States (real) ','Measurements y (real)', 'Kalman states estimation', '-3sigma', '+3sigma')
+xlabel('N');
+
+% Plot Error Density
+figure;
+ks = [1, 2, 4, 30]; % Time instances 
+for i = 1:length(ks)
+    grid on;
+    k = ks(i);
+    error_density = normpdf(-6:0.1:6, 0, sqrt(P_Kalman(1, 1, k)));
+    plot(-6:0.1:6, error_density, 'LineWidth', 2);
+    title('Error Density');
+    ylabel('Normal Density of error');
+    hold on;
+end
+legend('error density k=1 ','error density k=2 ', 'error density k=4 ', 'error density k=30 ')
+
+%% c. Incorrect Prior
+
+% Generate new states and measurements
+x_0 = 2; 
+P_0 = 8;
+x_states = genLinearStateSequence(x_0, P_0, A_cv, Q, N);  
+y_measurements = genLinearMeasurementSequence(x_states, H, R);
+[x_Kalman, P_Kalman, V, P_pred] = kalmanFilter(y_measurements, x_0, P_0, A_cv, Q, H, R);
+
+% Plot results with incorrect prior mean
+figure;
+grid on;
+plot(x_states,'Linewidth', 2)
+hold on;
+plot(x_Kalman,'Linewidth', 2)
+x_0 = 12; % Change mean to incorrect value 
+[x_Kalman_incorrect, P_Kalman_incorrect] = kalmanFilter(y_measurements, x_0, P_0, A_cv, Q, H, R);
+plot(x_Kalman_incorrect,'Linewidth', 2)
+legend('x states', 'estimated x states with correct prior','estimated x states with incorrect prior')
+ylabel('x')
+xlabel(' Time steps N');
+
+%% d. Kalman Steps Visualization
+
+% Select time step
+k = 20;
+
+% Plot Kalman steps
+figure()
+time_steps = -13:0.01:13;
+
+% Prior
+prior = normpdf(time_steps,x_Kalman(k-1),sigma(k-1));
+plot(time_steps,prior,'linewidth',2)
+hold on
+grid on
+
+% Prediction step
+[x_pred, P_pred] = linearPrediction(x_Kalman(k-1), sigma(k-1)^2, A_cv, Q);
+pred_normpdf = normpdf(time_steps,x_pred,sqrt(P_pred));
+plot(time_steps,pred_normpdf,'linewidth',2)
+
+% Take the latest measurement y, needed for the prediction step
+y_pdf = normpdf(time_steps,y_measurements(k),R);
+plot(time_steps,y_pdf,'linewidth',2)
+
+% Update step
+[x_update, P_update, V] = linearUpdate(x_pred, P_pred, y_measurements(k), H, R);
+update_normpdf = normpdf(time_steps,x_update,sqrt(P_update));
+plot(time_steps,update_normpdf,'linewidth',2)
+
+% Plot details
+legend('P(x_{k-1} | y_{1:k-1}) (prior)','P(x_{k} | y_{1:k-1}) (prediction)',' y(k) (measurement)','P(x_{k} | y_{1:k}) (update)')
+title('Kalman steps')
+
+%% e) Kalman Filter Performance Evaluation
+
+% Generate a long true state sequence and corresponding measurement sequence
+N = 110000; 
+x_states = genLinearStateSequence(x_0, P_0, A_cv, Q, N);  
+y_measurements = genLinearMeasurementSequence(x_states, H, R);
+
+% Run Kalman filter
+[x_Kalman, P_Kalman, V, P_pred] = kalmanFilter(y_measurements, x_0, P_0, A_cv, Q, H, R);
+
+% Calculate mean of real states and Kalman estimates
+real_mean = mean(x_states);
+x_hat = mean(x_Kalman);
+
+% Plot estimation error
+time_steps = -13:0.01:13;
+N_P_NN = normpdf(time_steps, 0, sqrt(P_Kalman(1, 1, N))); % N (x; 0, PN|N )
+figure;
+xError = x_states(:,2:end)-x_Kalman;
+plot(time_steps, N_P_NN, 'Linewidth', 2)
+hold on;
+histogram(xError,'Normalization','pdf');
+legend('N(x;0,P_{N|N})','Estimation error')
+
+% Part 2 of e) Autocorrelation and Consistency Test
+figure;
+autocorr(V)
+s=H*P_pred(:,:,N)*H'+R;
+figure
+hold on;
+plot(1:N+1,s^(-1/2)*V);
+yline(3*sqrt(P_Kalman(N)))
+yline(-3*sqrt(P_Kalman(N)))
+ylabel('s^(-1/2)*V');
+xlabel('N');
+title('3 sigma consistency test')
+
+%% 2  a) Estimation of Sensor Parameters
+
+% Load sensor measurements
+Sensormeasurment = load('SensorMeasurements.mat');
+
+% Get data for different sets
+y_stationary = Sensormeasurment.CalibrationSequenceVelocity_v0;
+y_speed_10 = Sensormeasurment.CalibrationSequenceVelocity_v10;
+y_speed_20 = Sensormeasurment.CalibrationSequenceVelocity_v20;
+
+% Calculate mean, variance (sigma^2), and constant C for each calibration sequence
+[mean_y_stationary, variance_y_stationary, ~] = speedSensorEstimation(y_stationary, 1);
+C_stationary = 1;
+
+[mean_y_speed10, variance_y_10, C_10] = speedSensorEstimation(y_speed_10, 10);
+[mean_y_speed20, variance_y_20, C_20] = speedSensorEstimation(y_speed_20, 20); 
+
+% Calculate variance of R using Cov[y] = C * cov[R] * C^T (c is a scalar)
+cov_R1 = variance_y_stationary / (C_stationary^2);
+cov_R2 = variance_y_10 / (C_10^2);
+cov_R3 = variance_y_20 / (C_20^2);
+
+% Plot histograms with analytical estimation
+pdf_stationary = normpdf(-20:0.1:20, mean_y_stationary, sqrt(cov_R1));
+pdf_v10 = normpdf(-15:0.1:30, mean_y_speed10, sqrt(cov_R2));
+pdf_v20 = normpdf(0:0.1:40, mean_y_speed20, sqrt(cov_R3));
+
+% Plot for stationary case
+figure;
+hold on;
+histogram(y_stationary,'Normalization','pdf');
+plot(-20:0.1:20, pdf_stationary, 'Linewidth', 2);
+legend('v stationary', "analytical estimation")
+
+% Plot for v =10
+figure;
+hold on;
+histogram(y_speed_10,'Normalization','pdf');
+plot(-15:0.1:30, pdf_v10, 'Linewidth', 2);
+legend('v = 10' , "analytical estimation")
+
+% Plot for v =20
+figure;
+hold on;
+histogram(y_speed_20,'Normalization','pdf');
+plot(0:0.1:40, pdf_v20, 'Linewidth', 2);
+legend('v = 20' , "analytical estimation")
+
+%% ALL USED FUNCTIONS
+
+% Function to estimate speed sensor parameters
+function [mean_y, variance_y, C] = speedSensorEstimation(data, v)
+    mean_y = mean(data, 2);
+    variance_y = (data - mean_y) * (data - mean_y)' / (length(data) - 1);
+    C = mean_y / v;
+end
+
+% Kalman Filter Function
+function [X, P, V, P_pred_v] = kalmanFilter(Y, x_0, P_0, A, Q, H, R)
+    % Parameters
+    N = size(Y, 2); % Number of time steps
+    n = size(x_0, 1); % Dimensionality of the state vector
+    m = size(H, 1); % Dimensionality of the measurement vector
+    
+    % Data allocation
+    X = zeros(n, N); % Estimated state vector sequence
+    P = zeros(n, n, N); % Filter error covariance sequence
+    V = zeros(m, N);
+    P_pred_v = zeros(n, n, N);
+
+    % Initialize state estimate and covariance
+    X(:, 1) = x_0; % Prior mean
+    P(:, :, 1) = P_0; % Prior covariance
+    
+    % Kalman filtering loop
+    for t = 2:N+1
+        % Prediction step
+        x = X(:, t-1);
+        [x_pred, P_pred] = linearPrediction(x, P(:, :, t-1), A, Q);
+        P_pred_v(:,:,t) = P_pred;
+        
+        % Update step
+        y = Y(:, t-1); % Measurement at time t
+        [x, P(:, :, t), v_step] = linearUpdate(x_pred, P_pred, y, H, R);
+        
+        % Save estimates
+        X(:, t) = x;
+        V(:, t) = v_step;
+    end
+
+    % Remove initial states and covariance
+    X = X(:, 2:end);
+    P = P(:, :, 2:end);
+end
+
+% Linear Prediction Function
+function [x, P] = linearPrediction(x, P, A, Q)
+    % Predicted state mean
+    x = A * x;
+    % Predicted state covariance
+    P = A * P * A' + Q;
+end
+
+% Linear Update Function
+function [x, P, residual] = linearUpdate(x, P, y, H, R)
+    % Measurement residual
+    residual = y - H * x;
+    % Kalman gain
+    K = P * H' * inv(H * P * H' + R);
+    % Updated state mean
+    x = x + K * residual;
+    % Updated state covariance
+    P = (eye(size(P)) - K * H) * P;
+end
+
+% Function to generate linear state sequence
+function X = genLinearStateSequence(x_0, P_0, A, Q, N)
+    % Initialize state vector sequence
+    n = size(x_0, 1);
+    X = zeros(n, N+1);
+    % Generate initial state from the prior
+    X(:, 1) = mvnrnd(x_0, P_0)';
+    % Generate subsequent states using the process model
+    for t = 2:N+1
+        X(:, t) = A * X(:, t-1) + mvnrnd(zeros(n, 1), Q)';
+    end
+end
+
+% Function to generate linear measurement sequence
+function Y = genLinearMeasurementSequence(X, H, R)
+    m = size(H, 1); % Dimensionality of the observation
+    N = size(X, 2) - 1; % Number of observations
+    Y = zeros(m, N);
+    for k = 1:N
+        noise = mvnrnd(zeros(m, 1), R)';
+        Y(:, k) = H * X(:, k+1) + noise;
+    end
+end

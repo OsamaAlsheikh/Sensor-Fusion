@@ -1,0 +1,316 @@
+clear all        % Clear all variables from the workspace
+clc              % Clear the command window
+close all        % Close all figure windows
+
+%%
+% Question 1d
+
+mu_q = [0; 10];                                  % Define the mean vector for q
+Sigma_q = [0.3 0; 0 8];                          % Define the covariance matrix for q
+A = [1 0.5; 0 1];                                % Define the linear transformation matrix
+
+% Generate points for plotting sigma ellipses
+xy = sigmaEllipse2D(mu_q, Sigma_q, 3, 32);
+
+% Perform affine transformation and calculate mean and covariance of y
+[mu_y, Sigma_y] = affineGaussianTransform(mu_q, Sigma_q, A, [0 ; 0]);
+
+% Display the mean and covariance
+mu_y
+Sigma_y
+
+% Generate points for plotting sigma ellipses after transformation
+xy_trans = sigmaEllipse2D(mu_y, Sigma_y, 3, 32);
+
+% Plot the generated points and ellipses
+figure(1);
+h1 = plot(xy(1,:), xy(2,:), 'Color', 'red');    % Plot original sigma ellipses
+hold on;
+h2 = plot(xy_trans(1,:), xy_trans(2,:), 'Color', 'blue'); % Plot transformed sigma ellipses
+scatter(mu_q(1), mu_q(2), '*', 'MarkerEdgeColor', 'red'); % Plot original mean point
+scatter(mu_y(1), mu_y(2), '*', 'MarkerEdgeColor', 'blue'); % Plot transformed mean point
+legend([h1, h2], {'Original (q)', 'Transformed (z)'});    % Add legend
+xlabel('x-axis');                                  % Label x-axis
+ylabel('y-axis');                                  % Label y-axis
+title('Mean and Covariance of q and z');           % Add title
+xlim([-5, 20]);                                    % Set x-axis limits
+ylim([0, 22]);                                     % Set y-axis limits
+axis equal;                                        % Set aspect ratio to be equal
+grid on;                                           % Show grid
+
+%% Part 2a
+
+% Analytical calculation of mean and variance of z
+mu_z_analytical = 0;
+var_z_analytical = 18;
+
+% Numerical approximation using approxGaussianTransform
+mu_x = 0;
+Sigma_x = 2;
+f = @(x) 3*x;                                      % Define transformation function
+N = 100000;                                         % Number of samples
+
+% Perform numerical approximation
+[mu_z_numerical, Sigma_z_numerical, z_samples] = approxGaussianTransform(mu_x, Sigma_x, f, N);
+
+% Plotting the histogram of transformed samples
+figure;
+histogram(z_samples, 'Normalization', 'pdf', 'BinWidth', 0.5,'EdgeColor', 'w', 'FaceColor', 'blue');
+hold on;
+
+% Plotting Gaussian PDF with analytical mean and variance
+x_values = linspace(-10, 10, 1000);
+pdf_analytical = normpdf(x_values, mu_z_analytical, sqrt(var_z_analytical));
+plot(x_values, pdf_analytical, 'LineWidth', 2, 'Color', 'red');
+
+% Plotting Gaussian PDF with numerical mean and covariance
+pdf_numerical = normpdf(x_values, mu_z_numerical, sqrt(Sigma_z_numerical));
+plot(x_values, pdf_numerical, 'LineWidth', 2, 'Color', 'green');
+
+legend('Histogram', 'Analytical PDF', 'Numerical PDF'); % Add legend
+xlabel('z');                                       % Label x-axis
+ylabel('Probability Density');                     % Label y-axis
+title('Comparison of Analytical and Numerical Gaussian Approximations'); % Add title
+
+%% Part 2b
+
+% Numerical approximation using approxGaussianTransform for z = x^3
+mu_x = 0;
+Sigma_x = 2;
+f = @(x) x^3;                                       % Define transformation function
+N = 100000;                                         % Number of samples
+
+% Perform numerical approximation
+[mu_z_numerical, Sigma_z_numerical, z_samples] = approxGaussianTransform(mu_x, Sigma_x, f, N);
+
+% Plotting the histogram of transformed samples
+figure;
+histogram(z_samples, 'Normalization', 'pdf', 'BinWidth', 0.5,'EdgeColor', 'w', 'FaceColor', 'blue');
+hold on;
+x_values = linspace(-60, 60, 1000);
+% Plotting Gaussian PDF with numerical mean and covariance
+pdf_numerical = normpdf(x_values, mu_z_numerical, sqrt(Sigma_z_numerical));
+plot(x_values, pdf_numerical, 'LineWidth', 2, 'Color', 'green');
+
+legend('Histogram', 'Numerical PDF');             % Add legend
+xlabel('z');                                       % Label x-axis
+ylabel('Probability Density');                     % Label y-axis
+title('Numerical Gaussian Approximations and Histogram of the Samples'); % Add title
+
+%% Part 3e
+
+% Simulation parameters
+n_samples = 10000;
+sigma_r = 2;
+sigma_x= 5;
+h=5;
+lower_bound = 0;
+upper_bound = 10;
+
+x_values = linspace(0, 10, 1000);
+
+% Generate samples of x from a uniform distribution
+x = unifrnd(lower_bound, upper_bound, [10000, 1]);
+
+% Generate samples of x from a normal distribution
+x_normal = sigma_x * randn(n_samples, 1);
+
+% Generate samples of r from a normal distribution
+r = sigma_r * randn(n_samples, 1);
+
+% Calculate y = h(x) + r for linear function
+y_linear_uni = 5 * x + r;
+
+% Calculate y = h(x) + r for non-linear function
+y_nonlinear_uni = 5 * sin(x) + r;
+
+% Calculate y = h(x) + r for linear function with normal x
+y_linear_normal = 5 * x_normal + r;
+
+% Calculate y = h(x) + r for non-linear function with normal x
+y_nonlinear_normal = 5 * sin(x_normal) + r;
+
+% Plot histograms
+figure;
+
+% Linear function plot with uniform x
+subplot(1, 2, 1);
+histogram(y_linear_uni, 'Normalization', 'pdf', 'BinWidth', 0.5);
+title('Linear Transformation (Uniform)');
+xlabel('y');
+ylabel('Probability Density');
+
+% Non-linear function plot with uniform x
+subplot(1, 2, 2);
+histogram(y_linear_normal, 'Normalization', 'pdf', 'BinWidth', 0.5);
+title('Linear Transformation (Normal)');
+xlabel('y');
+ylabel('Probability Density');
+
+% Plot histograms for non-linear transformations
+figure;
+
+% Non-linear function plot with uniform x
+subplot(1, 2, 1);
+histogram(y_nonlinear_uni, 'Normalization', 'pdf', 'BinWidth', 0.5);
+title('Nonlinear Transformation (Uniform)');
+xlabel('y');
+ylabel('Probability Density');
+
+% Non-linear function plot with normal x
+subplot(1, 2, 2);
+histogram(y_nonlinear_normal, 'Normalization', 'pdf', 'BinWidth', 0.5);
+title('Nonlinear Transformation (Normal)');
+xlabel('y');
+ylabel('Probability Density');
+
+% Calculate y = h(x) + r for linear function with x=5
+y_linear_xconst = 5 * 5 + r;
+
+% Calculate y = h(x) + r for non-linear function with x=5
+y_nonlinear_xconst = 5 * sin(5) + r;
+
+figure;
+
+% Linear function plot with x=5
+subplot(1, 2, 1);
+histogram(y_linear_xconst, 'Normalization', 'pdf', 'BinWidth', 0.5);
+title('Linear Transformation (p|x=5)');
+xlabel('y');
+ylabel('Probability Density');
+
+% Non-linear function plot with x=5
+subplot(1, 2, 2);
+histogram(y_nonlinear_xconst, 'Normalization', 'pdf', 'BinWidth', 0.5);
+title('Nonlinear Transformation (p|x=5)');
+xlabel('y');
+ylabel('Probability Density');
+%%  4a)
+clear all
+% Parameters
+sigma = 0.5; % Variance of noise
+
+% Number of samples
+num_samples = 10000;
+
+% Sample theta from the discrete prior
+theta_samples = randsample([-1, 1], num_samples, true);
+theta_samples(theta_samples < 0.5) = -1; % Set theta = -1 with probability 0.5
+theta_samples(theta_samples >= 0.5) = 1; % Set theta = 1 with probability 0.5
+
+% Sample noise w from a normal distribution
+w_samples = sigma * randn(num_samples, 1); % Random samples from normal distribution
+
+% Compute y = theta + w
+y_samples = theta_samples + w_samples;
+
+% Plot histogram of y
+figure;
+histogram(y_samples, 'Normalization', 'pdf');
+title('Histogram of y');
+xlabel('y');
+ylabel('Probability Density');
+
+
+
+
+
+%%
+function [mu_y, Sigma_y] = affineGaussianTransform(mu_x, Sigma_x, A, b)
+%affineTransformGauss calculates the mean and covariance of y, the 
+%transformed variable, exactly when the function, f, is defined as 
+%y = f(x) = Ax + b, where A is a matrix, b is a vector of the same 
+%dimensions as y, and x is a Gaussian random variable.
+%
+%Input
+%   MU_X        [n x 1] Expected value of x.
+%   SIGMA_X     [n x n] Covariance of x.
+%   A           [m x n] Linear transform matrix.
+%   B           [m x 1] Constant part of the affine transformation.
+%
+%Output
+%   MU_Y        [m x 1] Expected value of y.
+%   SIGMA_Y     [m x m] Covariance of y.
+
+%Your code here
+  
+
+% Calculate the mean of the transformed variable y
+mu_y = A * mu_x + b;
+
+% Calculate the covariance matrix of the transformed variable y
+Sigma_y = A * Sigma_x * A';
+end
+
+
+function [ xy ] = sigmaEllipse2D( mu, Sigma, level, npoints )
+%SIGMAELLIPSE2D generates x,y-points which lie on the ellipse describing
+% a sigma level in the Gaussian density defined by mean and covariance.
+%
+%Input:
+%   MU          [2 x 1] Mean of the Gaussian density
+%   SIGMA       [2 x 2] Covariance matrix of the Gaussian density
+%   LEVEL       Which sigma level curve to plot. Can take any positive value, 
+%               but common choices are 1, 2 or 3. Default = 3.
+%   NPOINTS     Number of points on the ellipse to generate. Default = 32.
+%
+%Output:
+%   XY          [2 x npoints] matrix. First row holds x-coordinates, second
+%               row holds the y-coordinates. First and last columns should 
+%               be the same point, to create a closed curve.
+
+
+%Setting default values, in case only mu and Sigma are specified.
+if nargin < 3
+    level = 3;
+end
+if nargin < 4
+    npoints = 32;
+end
+%Your code here
+
+phi = linspace(0, 2*pi, npoints);
+xy = mu + level*sqrtm(Sigma)*([cos(phi); sin(phi)]);
+end
+
+
+function [mu_y, Sigma_y, y_s] = approxGaussianTransform(mu_x, Sigma_x, f, N)
+%approxGaussianTransform takes a Gaussian density and a transformation 
+%function and calculates the mean and covariance of the transformed density.
+%
+%Inputs
+%   MU_X        [m x 1] Expected value of x.
+%   SIGMA_X     [m x m] Covariance of x.
+%   F           [Function handle] Function which maps a [m x 1] dimensional
+%               vector into another vector of size [n x 1].
+%   N           Number of samples to draw. Default = 5000.
+%
+%Output
+%   MU_Y        [n x 1] Approximated mean of y.
+%   SIGMA_Y     [n x n] Approximated covariance of y.
+%   ys          [n x N] Samples propagated through f
+
+
+if nargin < 4
+    N = 5000;
+end
+
+%Your code here
+x_s = mvnrnd(mu_x, Sigma_x, N) % N x m ;
+
+for i=1:N
+    x=x_s(i,:)'; % transpose because f takes [m x 1] not 1 x m
+    y_s(i,:)=f(x)'; %1 x n
+end
+
+%y_s  N x n needs to be transposed to become  [n x N].
+y_s=y_s';
+
+mu_y = mean(y_s,2); %will take the mean of rows which means it will give back [n x 1] Approximated mean of y.
+
+
+%C = cov(A) returns the covariance.
+% If A ([N x n]) is a matrix whose columns represent random variables n and whose rows represent observations N, 
+%C is the covariance matrix with the corresponding column variances along the diagonal.
+Sigma_y = cov(y_s'); %y_s is [n x N] but cov needs [N x n], that is why we transpose it
+end
